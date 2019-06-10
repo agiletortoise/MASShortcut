@@ -24,7 +24,7 @@ static const CGFloat MASButtonFontSize = 11;
     NSInteger _shortcutToolTipTag;
     NSInteger _hintToolTipTag;
     NSTrackingArea *_hintArea;
-	BOOL _acceptsFirstResponder;
+    BOOL _acceptsFirstResponder;
 }
 
 #pragma mark -
@@ -60,7 +60,7 @@ static const CGFloat MASButtonFontSize = 11;
     _shortcutValidator = [MASShortcutValidator sharedValidator];
     _enabled = YES;
     _showsDeleteButton = YES;
-	_acceptsFirstResponder = NO;
+    _acceptsFirstResponder = NO;
     [self resetShortcutCellStyle];
 }
 
@@ -78,6 +78,7 @@ static const CGFloat MASButtonFontSize = 11;
         _enabled = flag;
         [self updateTrackingAreas];
         self.recording = NO;
+        [self invalidateIntrinsicContentSize];
         [self setNeedsDisplay:YES];
     }
 }
@@ -87,6 +88,7 @@ static const CGFloat MASButtonFontSize = 11;
     if (_style != newStyle) {
         _style = newStyle;
         [self resetShortcutCellStyle];
+        [self invalidateIntrinsicContentSize];
         [self setNeedsDisplay:YES];
     }
 }
@@ -135,6 +137,7 @@ static const CGFloat MASButtonFontSize = 11;
     [self resetToolTips];
     [self activateEventMonitoring:_recording];
     [self activateResignObserver:_recording];
+    [self invalidateIntrinsicContentSize];
     [self setNeedsDisplay:YES];
 
     // Give VoiceOver users feedback on the result. Requires at least 10.9 to run.
@@ -161,6 +164,7 @@ static const CGFloat MASButtonFontSize = 11;
 {
     _shortcutValue = shortcutValue;
     [self resetToolTips];
+    [self invalidateIntrinsicContentSize];
     [self setNeedsDisplay:YES];
     [self propagateValue:shortcutValue forBinding:MASShortcutBinding];
 
@@ -172,7 +176,15 @@ static const CGFloat MASButtonFontSize = 11;
 - (void)setShortcutPlaceholder:(NSString *)shortcutPlaceholder
 {
     _shortcutPlaceholder = shortcutPlaceholder.copy;
+    [self invalidateIntrinsicContentSize];
     [self setNeedsDisplay:YES];
+}
+
+#pragma mark - Appearance
+
+- (BOOL)allowsVibrancy
+{
+    return YES;
 }
 
 #pragma mark - Drawing
@@ -219,7 +231,7 @@ static const CGFloat MASButtonFontSize = 11;
             buttonTitle = NSStringFromMASKeyCode(kMASShortcutGlyphClear);
         }
         if (buttonTitle != nil) {
-            [self drawInRect:self.bounds withTitle:buttonTitle alignment:NSTextAlignmentRight state:NSOffState];
+            [self drawInRect:self.bounds withTitle:buttonTitle alignment:NSRightTextAlignment state:NSOffState];
         }
         CGRect shortcutRect;
         [self getShortcutRect:&shortcutRect hintRect:NULL];
@@ -230,12 +242,12 @@ static const CGFloat MASButtonFontSize = 11;
                                  ? self.shortcutPlaceholder
                                  : MASLocalizedString(@"Type New Shortcut", @"Non-empty shortcut button in recording state")))
                            : _shortcutValue ? _shortcutValue.description : @"");
-        [self drawInRect:shortcutRect withTitle:title alignment:NSTextAlignmentCenter state:self.isRecording ? NSOnState : NSOffState];
+        [self drawInRect:shortcutRect withTitle:title alignment:NSCenterTextAlignment state:self.isRecording ? NSOnState : NSOffState];
     }
     else {
         if (self.recording)
         {
-            [self drawInRect:self.bounds withTitle:NSStringFromMASKeyCode(kMASShortcutGlyphEscape) alignment:NSTextAlignmentRight state:NSOffState];
+            [self drawInRect:self.bounds withTitle:NSStringFromMASKeyCode(kMASShortcutGlyphEscape) alignment:NSRightTextAlignment state:NSOffState];
             
             CGRect shortcutRect;
             [self getShortcutRect:&shortcutRect hintRect:NULL];
@@ -244,15 +256,34 @@ static const CGFloat MASButtonFontSize = 11;
                                : (self.shortcutPlaceholder.length > 0
                                   ? self.shortcutPlaceholder
                                   : MASLocalizedString(@"Type Shortcut", @"Empty shortcut button in recording state")));
-            [self drawInRect:shortcutRect withTitle:title alignment:NSTextAlignmentCenter state:NSOnState];
+            [self drawInRect:shortcutRect withTitle:title alignment:NSCenterTextAlignment state:NSOnState];
         }
         else
         {
             [self drawInRect:self.bounds withTitle:MASLocalizedString(@"Record Shortcut", @"Empty shortcut button in normal state")
-                   alignment:NSTextAlignmentCenter state:NSOffState];
+                   alignment:NSCenterTextAlignment state:NSOffState];
         }
     }
 }
+
+
+- (NSSize)intrinsicContentSize
+{
+    NSSize cellSize = _shortcutCell.cellSize;
+
+    // Use a "fake" value for width.  Since determining the actual width requires information
+    // that is not determined until drawRect: is called, it doesn't seem feasible to properly
+    // calculate the intrinsic size without refactoring the code.  That would give better results,
+    // however.
+
+    // 120 is an arbitray number that seems to be wide enough for English localization.  This
+    // may need to be adjusted for other locales/languages.
+
+    // NOTE:  Simply returning cellSize results in a display that is sometimes correct
+    // and sometimes not, and changes based on whether the mouse is hovering or not.
+    return NSMakeSize(120, cellSize.height);
+}
+
 
 #pragma mark - Mouse handling
 
@@ -344,6 +375,7 @@ static const CGFloat MASButtonFontSize = 11;
 {
     if (_hinting != flag) {
         _hinting = flag;
+        [self invalidateIntrinsicContentSize];
         [self setNeedsDisplay:YES];
     }
 }
@@ -402,7 +434,7 @@ void *kUserDataHint = &kUserDataHint;
     static id eventMonitor = nil;
     if (shouldActivate) {
         __unsafe_unretained MASShortcutView *weakSelf = self;
-        NSEventMask eventMask = (NSEventMaskKeyDown | NSEventMaskFlagsChanged);
+        NSEventMask eventMask = (NSKeyDownMask | NSFlagsChangedMask);
         eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:eventMask handler:^(NSEvent *event) {
 
             // Create a shortcut from the event
@@ -427,14 +459,14 @@ void *kUserDataHint = &kUserDataHint;
             }
 
             // If the shortcut is Cmd-W or Cmd-Q, cancel recording and pass the event through
-            else if ((shortcut.modifierFlags == NSEventModifierFlagCommand) && (shortcut.keyCode == kVK_ANSI_W || shortcut.keyCode == kVK_ANSI_Q)) {
+            else if ((shortcut.modifierFlags == NSCommandKeyMask) && (shortcut.keyCode == kVK_ANSI_W || shortcut.keyCode == kVK_ANSI_Q)) {
                 weakSelf.recording = NO;
             }
 
             else {
                 // Verify possible shortcut
                 if (shortcut.keyCodeString.length > 0) {
-                    if ([weakSelf.shortcutValidator isShortcutValid:shortcut]) {
+                    if (!weakSelf.shortcutValidator || [weakSelf.shortcutValidator isShortcutValid:shortcut]) {
                         // Verify that shortcut is not used
                         NSString *explanation = nil;
                         if ([weakSelf.shortcutValidator isShortcutAlreadyTakenBySystem:shortcut explanation:&explanation]) {
@@ -444,7 +476,7 @@ void *kUserDataHint = &kUserDataHint;
                             NSString *format = MASLocalizedString(@"The key combination %@ cannot be used",
                                                                  @"Title for alert when shortcut is already used");
                             NSAlert* alert = [[NSAlert alloc]init];
-                            alert.alertStyle = NSAlertStyleCritical;
+                            alert.alertStyle = NSCriticalAlertStyle;
                             alert.informativeText = explanation;
                             alert.messageText = [NSString stringWithFormat:format, shortcut];
                             [alert addButtonWithTitle:MASLocalizedString(@"OK", @"Alert button when shortcut is already used")];
@@ -547,11 +579,6 @@ void *kUserDataHint = &kUserDataHint;
 
 #pragma mark - Accessibility
 
-//- (BOOL)accessibilityIsIgnored
-//{
-//    return NO;
-//}
-
 - (NSString *)accessibilityHelp
 {
     return MASLocalizedString(@"To record a new shortcut, click this button, and then type the"
@@ -584,22 +611,24 @@ void *kUserDataHint = &kUserDataHint;
 
 - (BOOL)acceptsFirstResponder
 {
-	return _acceptsFirstResponder;
+    return _acceptsFirstResponder;
 }
 
 - (void)setAcceptsFirstResponder:(BOOL)value
 {
-	_acceptsFirstResponder = value;
+    _acceptsFirstResponder = value;
 }
 
 - (BOOL)becomeFirstResponder
 {
+    [self invalidateIntrinsicContentSize];
     [self setNeedsDisplay:YES];
     return [super becomeFirstResponder];
 }
 
 - (BOOL)resignFirstResponder
 {
+    [self invalidateIntrinsicContentSize];
     [self setNeedsDisplay:YES];
     return [super resignFirstResponder];
 }
